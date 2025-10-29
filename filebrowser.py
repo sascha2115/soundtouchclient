@@ -14,10 +14,14 @@ def create_filebrowser(client, accountid, saved_path, on_close, page):
     # UI Components
     file_list = ft.Column([], spacing=5, scroll="auto")
 
-    path_display = ft.Text("", size=12, color=ft.Colors.GREY_400)
+    path_display = ft.Text(
+        "",
+        size=12,
+        color=ft.Colors.GREY_400,
+    )
 
     back_button = ft.ElevatedButton(
-        "← Back",
+        " ← Back ",
         on_click=lambda e: go_back(),
         bgcolor=ft.Colors.GREY_800,
         color=ft.Colors.WHITE,
@@ -56,7 +60,7 @@ def create_filebrowser(client, accountid, saved_path, on_close, page):
                 None, lambda: client.GetMusicLibraryItems(nav)
             )
             current_items = result.Items
-            print("length:", len(current_items))
+            # print("length:", len(current_items))
             # this somehow only loads 1000 items max (?)
 
             file_list.controls.clear()
@@ -67,7 +71,7 @@ def create_filebrowser(client, accountid, saved_path, on_close, page):
                 )
             else:
                 for idx, item in enumerate(current_items):
-                    if item.TypeValue in ["dir", "containeritem"]:
+                    if item.TypeValue == "dir":
                         icon = ft.Icons.FOLDER
                         icon_color = ft.Colors.YELLOW_700
                     elif item.TypeValue == "track":
@@ -79,24 +83,23 @@ def create_filebrowser(client, accountid, saved_path, on_close, page):
 
                     row_content = ft.Row(
                         [
-                            ft.Text(str(idx + 1), color=ft.Colors.WHITE24),
+                            # ft.Text(str(idx + 1), color=ft.Colors.WHITE24),
                             ft.Icon(icon, color=icon_color, size=20),
                             ft.Text(
                                 item.Name,
-                                size=14,
+                                size=13,
                                 color=ft.Colors.WHITE,
                                 expand=True,
                             ),
                             ft.IconButton(
-                                icon=ft.Icons.PLAY_ARROW
-                                if item.TypeValue == "track"
-                                else ft.Icons.CHEVRON_RIGHT,
-                                icon_size=18,
-                                icon_color=ft.Colors.GREEN_400
-                                if item.TypeValue == "track"
-                                else ft.Colors.WHITE70,
+                                icon=ft.Icons.PLAY_ARROW,
+                                icon_size=20,
+                                icon_color=ft.Colors.GREEN_400,
                                 data=idx,
-                                on_click=lambda e, item=item: handle_item_click(item),
+                                on_click=lambda e, item=item: handle_item_click(
+                                    item, "button"
+                                ),
+                                padding=ft.padding.symmetric(horizontal=15),
                             ),
                         ],
                         alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
@@ -107,9 +110,9 @@ def create_filebrowser(client, accountid, saved_path, on_close, page):
                             content=row_content,
                             bgcolor=ft.Colors.GREY_800,
                             border_radius=5,
-                            padding=ft.padding.symmetric(horizontal=10, vertical=5),
+                            padding=ft.padding.symmetric(horizontal=10, vertical=0),
                         ),
-                        on_tap=lambda e, item=item: handle_item_click(item),
+                        on_tap=lambda e, item=item: handle_item_click(item, "row"),
                         mouse_cursor=ft.MouseCursor.CLICK,
                     )
 
@@ -129,13 +132,14 @@ def create_filebrowser(client, accountid, saved_path, on_close, page):
     def browse_folder(container_item=None, add_to_stack=True):
         page.run_task(browse_folder_async, container_item, add_to_stack)
 
-    def handle_item_click(item):
-        if item.TypeValue in ["dir", "containeritem"]:
+    def handle_item_click(item, source=None):
+        if source == "row" and item.TypeValue == "dir":
             browse_folder(item, add_to_stack=True)
-        elif item.TypeValue == "track":
-            play_track(item)
+        else:
+            play_item(item)  # play folder or track
 
-    def play_track(item):
+    def play_item(item):
+        print("Playing:", item.ContentItem.Name)
         try:
             msg = client.PlayContentItem(item.ContentItem)
             print("msg:", msg)
@@ -204,12 +208,12 @@ def create_filebrowser(client, accountid, saved_path, on_close, page):
                     ],
                     alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                 ),
-                path_display,
+                # path_display,
                 ft.Container(
                     content=file_list,
                     bgcolor=ft.Colors.GREY_900,
                     border_radius=10,
-                    padding=10,
+                    padding=5,
                     expand=True,
                     height=400,
                 ),
