@@ -1,6 +1,5 @@
 import flet as ft
 import asyncio
-import pprint
 from bosesoundtouchapi.models import Navigate
 
 # Configuration

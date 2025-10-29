@@ -1,10 +1,11 @@
 import flet as ft
 import json
-import requests
 import asyncio
+import urllib.request
 import pprint
-from bosesoundtouchapi import SoundTouchClient, SoundTouchDevice, SoundTouchDiscovery
+from bosesoundtouchapi import SoundTouchClient, SoundTouchDevice
 from pathlib import Path
+from discover import discover_soundtouch_ip
 from filebrowser import create_filebrowser
 
 
@@ -61,6 +62,7 @@ class BoseSoundTouchController:
             color=ft.Colors.WHITE,
             shape=ft.RoundedRectangleBorder(radius=12),
             icon_color=ft.Colors.WHITE,
+            padding=ft.padding.symmetric(horizontal=15, vertical=10),
         )
 
         # Buttons
@@ -295,13 +297,9 @@ class BoseSoundTouchController:
         self.status_label.value = "Searching for devices..."
         self.page.update()
         try:
-            discovery = SoundTouchDiscovery(True, printToConsole=True)
-            devices = discovery.DiscoverDevices(timeout=5)
-            if devices:
-                print("Devices found.")
-                sockaddr = list(devices)[0]
-                ipaddr = sockaddr.split(":")[0]
-                print("IP-Address:", ipaddr)
+            ipaddr = discover_soundtouch_ip()
+            if ipaddr:
+                print("Device found at IP-Address:", ipaddr)
                 self.connect_to_device(ipaddr)
             else:
                 print("No devices found.")
@@ -315,12 +313,15 @@ class BoseSoundTouchController:
     def connect_to_device(self, ip, name=None):
         print("Connecting to device...")
         try:
-            requests.get(f"http://{ip}:8090/info", timeout=5)
+            url = f"http://{ip}:8090/info"
+            with urllib.request.urlopen(url, timeout=5) as response:
+                # You can read the response here if needed
+                response.read()
             print("Connected to:", ip)
-        except requests.RequestException:
-            print("Connection error: IP request failed.")
+        except (urllib.error.URLError, urllib.error.HTTPError) as e:
+            print("Connection error: IP request failed.", e)
             raise ValueError("Connection failed")
-            return
+            # return  # not needed here after raise
 
         try:
             self.device = SoundTouchDevice(ip)
