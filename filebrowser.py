@@ -1,6 +1,9 @@
 import flet as ft
 import asyncio
-from bosesoundtouchapi.models import Navigate
+
+# from bosesoundtouchapi.models import Navigate
+from bosesoundtouchapi.models.navigate import Navigate
+
 
 # Configuration
 SOURCE = "STORED_MUSIC"

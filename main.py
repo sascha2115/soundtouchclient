@@ -1,11 +1,10 @@
 import flet as ft
 import json
+import requests
 import asyncio
-import urllib.request
 import pprint
-from bosesoundtouchapi import SoundTouchClient, SoundTouchDevice
+from bosesoundtouchapi import SoundTouchClient, SoundTouchDevice, SoundTouchDiscovery
 from pathlib import Path
-from discover import discover_soundtouch_ip
 from filebrowser import create_filebrowser
 
 
@@ -40,7 +39,7 @@ class BoseSoundTouchController:
         self.artist_album_label = ft.Text(
             "Loading...",
             size=14,
-            color=ft.Colors.GREY_800,
+            color=ft.Colors.GREY_500,
             text_align=ft.TextAlign.CENTER,
         )
 
@@ -62,7 +61,6 @@ class BoseSoundTouchController:
             color=ft.Colors.WHITE,
             shape=ft.RoundedRectangleBorder(radius=12),
             icon_color=ft.Colors.WHITE,
-            padding=ft.padding.symmetric(horizontal=15, vertical=10),
         )
 
         # Buttons
@@ -297,9 +295,13 @@ class BoseSoundTouchController:
         self.status_label.value = "Searching for devices..."
         self.page.update()
         try:
-            ipaddr = discover_soundtouch_ip()
-            if ipaddr:
-                print("Device found at IP-Address:", ipaddr)
+            discovery = SoundTouchDiscovery(True, printToConsole=True)
+            devices = discovery.DiscoverDevices(timeout=5)
+            if devices:
+                print("Devices found.")
+                sockaddr = list(devices)[0]
+                ipaddr = sockaddr.split(":")[0]
+                print("IP-Address:", ipaddr)
                 self.connect_to_device(ipaddr)
             else:
                 print("No devices found.")
@@ -313,15 +315,12 @@ class BoseSoundTouchController:
     def connect_to_device(self, ip, name=None):
         print("Connecting to device...")
         try:
-            url = f"http://{ip}:8090/info"
-            with urllib.request.urlopen(url, timeout=5) as response:
-                # You can read the response here if needed
-                response.read()
+            requests.get(f"http://{ip}:8090/info", timeout=5)
             print("Connected to:", ip)
-        except (urllib.error.URLError, urllib.error.HTTPError) as e:
-            print("Connection error: IP request failed.", e)
+        except requests.RequestException:
+            print("Connection error: IP request failed.")
             raise ValueError("Connection failed")
-            # return  # not needed here after raise
+            return
 
         try:
             self.device = SoundTouchDevice(ip)
@@ -582,7 +581,11 @@ def main(page: ft.Page):
     controller = BoseSoundTouchController(page)
     page.run_task(controller.background_status_loop)
     page.run_task(controller.find_media_server)
+    page.window.width = 500
+    page.window.height = 720
+    page.window.top = 45
+    page.window.left = 960
 
 
 if __name__ == "__main__":
-    ft.app(target=main)
+    ft.app(target=main, view=ft.AppView.FLET_APP)
