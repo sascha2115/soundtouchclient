@@ -1,11 +1,16 @@
+from bosesoundtouchapi.models.contentitem import ContentItem
 import flet as ft
 import json
 import requests
 import asyncio
+import xml.etree.ElementTree as ET
 import pprint
 from bosesoundtouchapi import SoundTouchClient, SoundTouchDevice, SoundTouchDiscovery
 from pathlib import Path
 from filebrowser import create_filebrowser
+
+# Configuration
+SOURCE = "STORED_MUSIC"
 
 
 class BoseSoundTouchController:
@@ -20,6 +25,7 @@ class BoseSoundTouchController:
 
         self.device = None
         self.client = None
+        self.ipaddr = ""
         self.config_file = Path.home() / ".bose_soundtouch_config.json"
         self.accountid = ""
         self.last_path = []
@@ -30,7 +36,7 @@ class BoseSoundTouchController:
 
         # Track info
         self.track_label = ft.Text(
-            "🔈",
+            "",
             size=20,
             weight=ft.FontWeight.BOLD,
             text_align=ft.TextAlign.CENTER,
@@ -40,6 +46,13 @@ class BoseSoundTouchController:
             "Loading...",
             size=14,
             color=ft.Colors.GREY_500,
+            text_align=ft.TextAlign.CENTER,
+        )
+        # Track number info
+        self.track_number_label = ft.Text(
+            "Track",
+            size=12,
+            color=ft.Colors.GREY_600,
             text_align=ft.TextAlign.CENTER,
         )
 
@@ -61,6 +74,7 @@ class BoseSoundTouchController:
             color=ft.Colors.WHITE,
             shape=ft.RoundedRectangleBorder(radius=12),
             icon_color=ft.Colors.WHITE,
+            padding=ft.padding.symmetric(horizontal=15, vertical=10),
         )
 
         # Buttons
@@ -91,6 +105,13 @@ class BoseSoundTouchController:
             disabled=True,
             style=button_style,
         )
+        # NEW: Repeat button
+        self.repeat_btn = ft.TextButton(
+            text="Repeat",
+            on_click=self.toggle_repeat,
+            disabled=True,
+            style=button_style,
+        )
 
         controls_section = ft.Column(
             [
@@ -99,7 +120,11 @@ class BoseSoundTouchController:
                     alignment=ft.MainAxisAlignment.CENTER,
                     spacing=10,
                 ),
-                self.shuffle_btn,
+                ft.Row(
+                    [self.shuffle_btn, self.repeat_btn],
+                    alignment=ft.MainAxisAlignment.CENTER,
+                    spacing=10,
+                ),
             ],
             horizontal_alignment=ft.CrossAxisAlignment.CENTER,
             spacing=15,
@@ -217,6 +242,7 @@ class BoseSoundTouchController:
             [
                 self.track_label,
                 self.artist_album_label,
+                self.track_number_label,
                 progress_section,
                 controls_section,
                 volume_section,
@@ -269,9 +295,9 @@ class BoseSoundTouchController:
         return {}
 
     # Save config to file
-    def save_config(self, ip, name):
+    def save_config(self, ipaddr, name):
         try:
-            config = {"last_ip": ip, "last_name": name}
+            config = {"last_ip": ipaddr, "last_name": name}
             with open(self.config_file, "w") as f:
                 json.dump(config, f, indent=2)
         except Exception as e:
@@ -279,12 +305,14 @@ class BoseSoundTouchController:
 
     # Connect to last known device
     def auto_connect_saved(self, cfg):
-        ip = cfg.get("last_ip")
+        ipaddr = cfg.get("last_ip")
+        if ipaddr:
+            self.ipaddr = ipaddr
         name = cfg.get("last_name", "Saved Device")
         self.status_label.value = "Connecting to device..."
         self.page.update()
         try:
-            self.connect_to_device(ip, name)
+            self.connect_to_device(ipaddr, name)
         except Exception as e:
             print(f"Auto-connect failed: {e}")
             self.discover_devices()
@@ -299,9 +327,10 @@ class BoseSoundTouchController:
             devices = discovery.DiscoverDevices(timeout=5)
             if devices:
                 print("Devices found.")
-                sockaddr = list(devices)[0]
-                ipaddr = sockaddr.split(":")[0]
+                sockaddr = list(devices)
+                ipaddr = sockaddr.split(":")
                 print("IP-Address:", ipaddr)
+                self.ipaddr = ipaddr
                 self.connect_to_device(ipaddr)
             else:
                 print("No devices found.")
@@ -312,25 +341,25 @@ class BoseSoundTouchController:
             self.page.update()
 
     # Connect device
-    def connect_to_device(self, ip, name=None):
+    def connect_to_device(self, ipaddr, name=None):
         print("Connecting to device...")
         try:
-            requests.get(f"http://{ip}:8090/info", timeout=5)
-            print("Connected to:", ip)
+            requests.get(f"http://{ipaddr}:8090/info", timeout=5)
+            print("Connected to:", ipaddr)
         except requests.RequestException:
             print("Connection error: IP request failed.")
             raise ValueError("Connection failed")
             return
 
         try:
-            self.device = SoundTouchDevice(ip)
+            self.device = SoundTouchDevice(ipaddr)
             pprint.pprint(self.device)
             self.client = SoundTouchClient(self.device)
             if not name:
                 info = self.client.GetInformation()
                 name = info.DeviceName
-            self.save_config(ip, name)
-            self.status_label.value = f"Connected: {name} ({ip})"
+            self.save_config(ipaddr, name)
+            self.status_label.value = f"Connected: {name} ({ipaddr})"
             self.enable_controls(True)
             self.update_status()
         except Exception as e:
@@ -345,6 +374,7 @@ class BoseSoundTouchController:
             self.play_pause_btn,
             self.next_btn,
             self.shuffle_btn,
+            self.repeat_btn,
         ]:
             btn.disabled = not enabled
         self.volume_slider.disabled = not enabled
@@ -439,6 +469,26 @@ class BoseSoundTouchController:
         except Exception as ex:
             print(f"Error toggling shuffle: {ex}")
 
+    # NEW: Repeat mode toggle
+    def toggle_repeat(self, e):
+        if not self.client:
+            return
+        try:
+            np = self.client.GetNowPlayingStatus(True)
+            current_repeat = getattr(np, "RepeatSetting", "REPEAT_OFF")
+
+            # Cycle through: OFF -> ON -> ONE -> OFF
+            if current_repeat == "REPEAT_OFF":
+                self.client.MediaRepeatAll()
+            elif current_repeat == "REPEAT_ALL":
+                self.client.MediaRepeatOne()
+            else:
+                self.client.MediaRepeatOff()
+
+            self.update_status()
+        except Exception as ex:
+            print(f"Error toggling repeat: {ex}")
+
     # Presets
     def select_preset(self, number):
         if not self.client:
@@ -479,6 +529,22 @@ class BoseSoundTouchController:
         self.filebrowser_overlay.visible = False
         self.page.update()
 
+    # Determine track number
+    def update_track_number(self):
+        try:
+            url = "http://" + self.ipaddr + ":8090/now_playing"
+            response = requests.get(url)
+            xmlroot = ET.fromstring(response.text)
+            offset = xmlroot.findtext("offset")
+            if offset:
+                offset = int(offset) + 1
+                self.track_number_label.value = f"Track: {offset}"
+            else:
+                self.track_number_label.value = ""
+        except Exception as e:
+            print(f"Error determining track number: {e}")
+            self.track_number_label.value = ""
+
     # Update UI elements
     def update_status(self):
         if not self.client:
@@ -496,9 +562,12 @@ class BoseSoundTouchController:
                 self.artist_album_label.value = (
                     f"{artist} • {album}" if artist and album else artist or album or ""
                 )
+
+                self.update_track_number()
             else:
                 self.track_label.value = ""
                 self.artist_album_label.value = ""
+                self.track_number_label.value = ""
 
             # Progress info (seconds)
             duration = getattr(np, "Duration", 0)
@@ -526,6 +595,15 @@ class BoseSoundTouchController:
             self.shuffle_btn.text = (
                 "Shuffle: On" if np.IsShuffleEnabled else "Shuffle: Off"
             )
+
+            # NEW: Repeat state
+            repeat_mode = getattr(np, "RepeatSetting", "REPEAT_OFF")
+            if repeat_mode == "REPEAT_ALL":
+                self.repeat_btn.text = "Repeat: All"
+            elif repeat_mode == "REPEAT_ONE":
+                self.repeat_btn.text = "Repeat: One"
+            else:
+                self.repeat_btn.text = "Repeat: Off"
 
             # Play/pause icon
             self.play_pause_btn.icon = (
